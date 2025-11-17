@@ -1,0 +1,54 @@
+name: Publish Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g., 1.0.3)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  publish:
+    name: Publish NuGet Package
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+        
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+        
+    - name: Update project version
+      run: |
+        VERSION=${{ github.event.inputs.version }}
+        sed -i "s/<Version>.*<\/Version>/<Version>$VERSION<\/Version>/" Frends.GermanSSN.Generate/Frends.GermanSSN.Generate.csproj
+        
+    - name: Restore dependencies
+      run: dotnet restore Frends.GermanSSN.sln
+      
+    - name: Build
+      run: dotnet build Frends.GermanSSN.sln --configuration Release --no-restore
+      
+    - name: Run tests
+      run: dotnet test Frends.GermanSSN.sln --configuration Release --no-build --verbosity normal
+      
+    - name: Pack NuGet package
+      run: dotnet pack Frends.GermanSSN.Generate/Frends.GermanSSN.Generate.csproj --configuration Release --no-build --output ./artifacts
+      
+    - name: List artifacts
+      run: ls -la ./artifacts/
+      
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: nuget-package
+        path: artifacts/*.nupkg
+        retention-days: 90

@@ -1,0 +1,79 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build-and-release:
+    name: Build and Create Release
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+        
+    - name: Extract version from tag
+      id: version
+      run: |
+        TAG=${GITHUB_REF#refs/tags/v}
+        echo "VERSION=$TAG" >> $GITHUB_OUTPUT
+        echo "Building version $TAG"
+        
+    - name: Update project version
+      run: |
+        VERSION=${{ steps.version.outputs.VERSION }}
+        sed -i "s/<Version>.*<\/Version>/<Version>$VERSION<\/Version>/" Frends.GermanSSN.Generate/Frends.GermanSSN.Generate.csproj
+        
+    - name: Restore dependencies
+      run: dotnet restore Frends.GermanSSN.sln
+      
+    - name: Build
+      run: dotnet build Frends.GermanSSN.sln --configuration Release --no-restore
+      
+    - name: Run tests
+      run: dotnet test Frends.GermanSSN.sln --configuration Release --no-build --verbosity normal
+      
+    - name: Pack NuGet package
+      run: dotnet pack Frends.GermanSSN.Generate/Frends.GermanSSN.Generate.csproj --configuration Release --no-build --output ./artifacts
+      
+    - name: Create Release Notes
+      id: release_notes
+      run: |
+        if [ -f "Frends.GermanSSN.Generate/CHANGELOG.md" ]; then
+          echo "NOTES_FILE=Frends.GermanSSN.Generate/CHANGELOG.md" >> $GITHUB_OUTPUT
+        else
+          echo "Release version ${{ steps.version.outputs.VERSION }}" > release_notes.txt
+          echo "NOTES_FILE=release_notes.txt" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          artifacts/*.nupkg
+        body_path: ${{ steps.release_notes.outputs.NOTES_FILE }}
+        draft: false
+        prerelease: ${{ contains(steps.version.outputs.VERSION, '-') }}
+        token: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Publish to NuGet.org
+      if: ${{ !contains(steps.version.outputs.VERSION, '-') }}
+      run: dotnet nuget push artifacts/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+      continue-on-error: true
+      
+    - name: Publish to GitHub Packages
+      run: dotnet nuget push artifacts/*.nupkg --api-key ${{ secrets.GITHUB_TOKEN }} --source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json --skip-duplicate
+      continue-on-error: true
