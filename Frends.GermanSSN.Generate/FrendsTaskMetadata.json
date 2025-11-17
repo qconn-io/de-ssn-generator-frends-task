@@ -1,0 +1,7 @@
+{
+  "Tasks": [
+    {
+      "TaskMethod": "Frends.GermanSSN.Generate.GermanSSN.Execute"
+    }
+  ]
+}
